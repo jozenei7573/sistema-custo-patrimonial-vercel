@@ -1,4 +1,4 @@
-type ContratoImportado = {
+export type ContratoImportado = {
   numero: string
   objeto: string
   valor: string
@@ -7,8 +7,11 @@ type ContratoImportado = {
 function limparTexto(texto: string) {
   return texto
     .replace(/\r/g, '')
+    .replace(/[;,]+/g, ' ')
     .replace(/"/g, '')
     .replace(/\t/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
 }
 
 function extrairNumero(linha: string): string {
@@ -29,14 +32,17 @@ function ehLinhaLixo(linha: string): boolean {
     t.includes('ESTADO DA BAHIA') ||
     t.includes('PREFEITURA MUNICIPAL DE ALAGOINHAS') ||
     t.includes('RELAÇÃO DE CONTRATOS') ||
-    t.includes('CONTRATO,PROCESSO,ASSINATURA') ||
+    (t.includes('CONTRATO') && t.includes('PROCESSO') && t.includes('ASSINATURA')) ||
     t.includes('GESTOR/FISCAL') ||
     t.includes('UNID. ORÇAMENTÁRIA') ||
     t.includes('ÓRGÃO') ||
     t.includes('ORGÃO') ||
     t.includes('DATA INÍCIO') ||
     t.includes('DATA FIM') ||
-    t.includes('PÁGINA ')
+    t.includes('PÁGINA ') ||
+    t.includes('CONTABILIS') ||
+    t.includes('TOTAL DE REGISTROS') ||
+    t.includes('CHAVE DO FILTRO')
   )
 }
 
@@ -49,7 +55,7 @@ export function processarContratos(textoOriginal: string): ContratoImportado[] {
   let coletandoObjeto = false
 
   for (const linhaBruta of linhas) {
-    const linha = linhaBruta.trim()
+    const linha = limparTexto(linhaBruta)
 
     if (ehLinhaLixo(linha)) continue
 
@@ -57,7 +63,7 @@ export function processarContratos(textoOriginal: string): ContratoImportado[] {
 
     if (numero) {
       if (atual) {
-        atual.objeto = atual.objeto.trim()
+        atual.objeto = limparTexto(atual.objeto)
         contratos.push(atual)
       }
 
@@ -79,7 +85,7 @@ export function processarContratos(textoOriginal: string): ContratoImportado[] {
     }
 
     if (/OBJETO:/i.test(linha)) {
-      atual.objeto = linha.replace(/.*OBJETO:\s*/i, '').trim()
+      atual.objeto = limparTexto(linha.replace(/.*OBJETO:\s*/i, ''))
       coletandoObjeto = true
       continue
     }
@@ -88,13 +94,13 @@ export function processarContratos(textoOriginal: string): ContratoImportado[] {
       if (extrairNumero(linha)) {
         coletandoObjeto = false
       } else {
-        atual.objeto = `${atual.objeto} ${linha}`.replace(/\s+/g, ' ').trim()
+        atual.objeto = limparTexto(`${atual.objeto} ${linha}`)
       }
     }
   }
 
   if (atual) {
-    atual.objeto = atual.objeto.trim()
+    atual.objeto = limparTexto(atual.objeto)
     contratos.push(atual)
   }
 

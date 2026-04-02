@@ -49,7 +49,7 @@ export default function Home() {
     const { data, error } = await supabase
       .from('contratos')
       .select('*')
-      .order('id', { ascending: false })
+      .order('valor', { ascending: false })
 
     if (error) {
       console.error('Erro ao carregar contratos:', error)
@@ -67,6 +67,28 @@ export default function Home() {
   useEffect(() => {
     carregarDados()
   }, [])
+
+  async function limparBase() {
+    const confirmado = window.confirm('Deseja apagar todos os contratos da base para novo teste?')
+    if (!confirmado) return
+
+    const { error } = await supabase.from('contratos').delete().neq('id', 0)
+
+    if (error) {
+      setStatus({
+        tipo: 'erro',
+        texto: `Erro ao limpar base: ${error.message}`,
+      })
+      return
+    }
+
+    setStatus({
+      tipo: 'sucesso',
+      texto: 'Base limpa com sucesso.',
+    })
+
+    await carregarDados()
+  }
 
   async function importarArquivo(event: ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0]
@@ -105,7 +127,7 @@ export default function Home() {
           return
         }
 
-        const payload = contratosProcessados.map((c: any) => ({
+        const payload = contratosProcessados.map((c) => ({
           numero: c.numero,
           objeto: c.objeto,
           valor: normalizarValor(c.valor),
@@ -167,42 +189,32 @@ export default function Home() {
   return (
     <main className="page-shell">
       <section className="hero">
-        <div className="hero__eyebrow">Prefeitura de Alagoinhas</div>
+        <div className="hero__eyebrow">Prefeitura Municipal de Alagoinhas – BA</div>
         <h1 className="hero__title">Sistema de Informação de Custos</h1>
-        <p className="hero__subtitle">
-          Base patrimonial • Visão gerencial • NBC TSP
-        </p>
+        <p className="hero__subtitle">Base patrimonial • Visão gerencial • NBC TSP</p>
       </section>
 
       <section className="panel panel--highlight">
         <h2 className="panel__title">Importar contratos</h2>
         <p className="panel__text">
-          Selecione o arquivo CSV exportado pelo módulo de contratos da prefeitura.
-          O sistema fará a leitura, tratamento e gravação automática no banco.
+          Selecione o arquivo CSV exportado pelo módulo de contratos da prefeitura. O sistema fará a leitura,
+          tratamento e gravação automática no banco.
         </p>
 
         <div className="upload-box">
           <label className={`upload-button ${importando ? 'is-disabled' : ''}`}>
-            <input
-              type="file"
-              accept=".csv,text/csv"
-              onChange={importarArquivo}
-              disabled={importando}
-              hidden
-            />
+            <input type="file" accept=".csv,text/csv" onChange={importarArquivo} disabled={importando} hidden />
             {importando ? 'Importando arquivo...' : 'Escolher arquivo CSV'}
           </label>
 
-          <div className="upload-file-name">
-            {arquivoSelecionado || 'Nenhum arquivo selecionado'}
-          </div>
+          <div className="upload-file-name">{arquivoSelecionado || 'Nenhum arquivo selecionado'}</div>
+
+          <button className="danger-button" onClick={limparBase} disabled={importando}>
+            Limpar base
+          </button>
         </div>
 
-        {status && (
-          <div className={`status-banner status-banner--${status.tipo}`}>
-            {status.texto}
-          </div>
-        )}
+        {status && <div className={`status-banner status-banner--${status.tipo}`}>{status.texto}</div>}
       </section>
 
       <section className="cards-grid">
@@ -218,9 +230,7 @@ export default function Home() {
 
         <article className="metric-card metric-card--gold">
           <span className="metric-card__label">Ticket médio</span>
-          <strong className="metric-card__value">
-            {formatarMoeda(ticketMedio)}
-          </strong>
+          <strong className="metric-card__value">{formatarMoeda(ticketMedio)}</strong>
         </article>
       </section>
 
@@ -228,18 +238,14 @@ export default function Home() {
         <div className="table-header">
           <div>
             <h2 className="panel__title">Contratos importados</h2>
-            <p className="panel__text">
-              Relação consolidada dos contratos processados no banco de dados.
-            </p>
+            <p className="panel__text">Relação consolidada dos contratos processados no banco de dados.</p>
           </div>
         </div>
 
         {loading ? (
           <div className="empty-state">Carregando contratos...</div>
         ) : contratos.length === 0 ? (
-          <div className="empty-state">
-            Nenhum contrato encontrado. Faça a importação do CSV para iniciar.
-          </div>
+          <div className="empty-state">Nenhum contrato encontrado. Faça a importação do CSV para iniciar.</div>
         ) : (
           <div className="table-wrapper">
             <table className="contracts-table">
@@ -253,15 +259,12 @@ export default function Home() {
               <tbody>
                 {contratos.map((contrato, index) => (
                   <tr key={contrato.id ?? `${contrato.numero}-${index}`}>
-                    <td className="contracts-table__number">
-                      {contrato.numero}
-                    </td>
+                    <td className="contracts-table__number">{contrato.numero}</td>
                     <td className="contracts-table__object">
-                      {contrato.objeto}
+                      {String(contrato.objeto || '').slice(0, 180)}
+                      {String(contrato.objeto || '').length > 180 ? '...' : ''}
                     </td>
-                    <td className="contracts-table__value">
-                      {formatarMoeda(Number(contrato.valor || 0))}
-                    </td>
+                    <td className="contracts-table__value">{formatarMoeda(Number(contrato.valor || 0))}</td>
                   </tr>
                 ))}
               </tbody>

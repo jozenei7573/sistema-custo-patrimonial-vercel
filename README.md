@@ -1,25 +1,16 @@
-# Sistema de Custo Patrimonial de Alagoinhas
+# Sistema de Informação de Custos
 
-Projeto Next.js 14 preparado para deploy na Vercel.
+Projeto Next.js 14 com Supabase e deploy na Vercel.
+
+## Variáveis de ambiente
+
+Crie na Vercel e localmente em `.env.local`:
+
+- `NEXT_PUBLIC_SUPABASE_URL`
+- `NEXT_PUBLIC_SUPABASE_ANON_KEY`
 
 ## Rodar localmente
 
 ```bash
 npm install
 npm run dev
-```
-
-## Build de produção
-
-```bash
-npm run build
-npm run start
-```
-
-## Deploy na Vercel
-
-1. Envie esta pasta para um repositório GitHub.
-2. Importe o repositório na Vercel.
-3. Use as configurações padrão de projeto Next.js.
-
-> Esta versão reconstruída é um dashboard estático pronto para validar o fluxo de deploy na Vercel. Integrações com Supabase e Cloudflare não estão incluídas neste pacote.
