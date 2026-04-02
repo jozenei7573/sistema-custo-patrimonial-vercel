@@ -24,23 +24,22 @@ function extrairValor(linha: string): string {
   return match ? match[0] : ''
 }
 
-function ehLinhaLixo(linha: string): boolean {
+function ehLinhaIgnoravel(linha: string): boolean {
   const t = linha.toUpperCase()
 
   return (
-    !linha.trim() ||
+    !linha ||
     t.includes('ESTADO DA BAHIA') ||
-    t.includes('PREFEITURA MUNICIPAL DE ALAGOINHAS') ||
+    t.includes('PREFEITURA MUNICIPAL') ||
     t.includes('RELAÇÃO DE CONTRATOS') ||
-    (t.includes('CONTRATO') && t.includes('PROCESSO') && t.includes('ASSINATURA')) ||
+    t.includes('CONTRATO PROCESSO') ||
     t.includes('GESTOR/FISCAL') ||
-    t.includes('UNID. ORÇAMENTÁRIA') ||
+    t.includes('UNID.') ||
     t.includes('ÓRGÃO') ||
     t.includes('ORGÃO') ||
     t.includes('DATA INÍCIO') ||
     t.includes('DATA FIM') ||
-    t.includes('PÁGINA ') ||
-    t.includes('CONTABILIS') ||
+    t.includes('PÁGINA') ||
     t.includes('TOTAL DE REGISTROS') ||
     t.includes('CHAVE DO FILTRO')
   )
@@ -48,19 +47,21 @@ function ehLinhaLixo(linha: string): boolean {
 
 export function processarContratos(textoOriginal: string): ContratoImportado[] {
   const texto = limparTexto(textoOriginal)
+
   const linhas = texto.split('\n')
 
   const contratos: ContratoImportado[] = []
+
   let atual: ContratoImportado | null = null
-  let coletandoObjeto = false
 
   for (const linhaBruta of linhas) {
     const linha = limparTexto(linhaBruta)
 
-    if (ehLinhaLixo(linha)) continue
+    if (ehLinhaIgnoravel(linha)) continue
 
     const numero = extrairNumero(linha)
 
+    // 🔵 NOVO CONTRATO
     if (numero) {
       if (atual) {
         atual.objeto = limparTexto(atual.objeto)
@@ -73,29 +74,24 @@ export function processarContratos(textoOriginal: string): ContratoImportado[] {
         valor: extrairValor(linha),
       }
 
-      coletandoObjeto = false
       continue
     }
 
     if (!atual) continue
 
-    const valorNaLinha = extrairValor(linha)
-    if (valorNaLinha && !atual.valor) {
-      atual.valor = valorNaLinha
+    // 🔵 tenta pegar valor se não tiver ainda
+    const valor = extrairValor(linha)
+    if (valor && !atual.valor) {
+      atual.valor = valor
     }
 
-    if (/OBJETO:/i.test(linha)) {
-      atual.objeto = limparTexto(linha.replace(/.*OBJETO:\s*/i, ''))
-      coletandoObjeto = true
-      continue
-    }
-
-    if (coletandoObjeto) {
-      if (extrairNumero(linha)) {
-        coletandoObjeto = false
-      } else {
-        atual.objeto = limparTexto(`${atual.objeto} ${linha}`)
-      }
+    // 🔵 pega qualquer texto útil como objeto
+    if (
+      linha.length > 20 &&
+      !linha.includes('R$') &&
+      !linha.match(/\d{2}\/\d{2}\/\d{4}/)
+    ) {
+      atual.objeto += ' ' + linha
     }
   }
 
@@ -104,5 +100,5 @@ export function processarContratos(textoOriginal: string): ContratoImportado[] {
     contratos.push(atual)
   }
 
-  return contratos.filter((c) => c.numero)
+  return contratos.filter(c => c.numero)
 }
