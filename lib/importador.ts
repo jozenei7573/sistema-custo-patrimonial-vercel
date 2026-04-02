@@ -1,57 +1,102 @@
-export function processarContratos(texto: string) {
+type ContratoImportado = {
+  numero: string
+  objeto: string
+  valor: string
+}
+
+function limparTexto(texto: string) {
+  return texto
+    .replace(/\r/g, '')
+    .replace(/"/g, '')
+    .replace(/\t/g, ' ')
+}
+
+function extrairNumero(linha: string): string {
+  const match = linha.match(/\b\d{3}-\d{4}\b/)
+  return match ? match[0] : ''
+}
+
+function extrairValor(linha: string): string {
+  const match = linha.match(/R\$\s?[\d.]+,\d{2}/)
+  return match ? match[0] : ''
+}
+
+function ehLinhaLixo(linha: string): boolean {
+  const t = linha.toUpperCase()
+
+  return (
+    !linha.trim() ||
+    t.includes('ESTADO DA BAHIA') ||
+    t.includes('PREFEITURA MUNICIPAL DE ALAGOINHAS') ||
+    t.includes('RELAÇÃO DE CONTRATOS') ||
+    t.includes('CONTRATO,PROCESSO,ASSINATURA') ||
+    t.includes('GESTOR/FISCAL') ||
+    t.includes('UNID. ORÇAMENTÁRIA') ||
+    t.includes('ÓRGÃO') ||
+    t.includes('ORGÃO') ||
+    t.includes('DATA INÍCIO') ||
+    t.includes('DATA FIM') ||
+    t.includes('PÁGINA ')
+  )
+}
+
+export function processarContratos(textoOriginal: string): ContratoImportado[] {
+  const texto = limparTexto(textoOriginal)
   const linhas = texto.split('\n')
 
-  const contratos: any[] = []
+  const contratos: ContratoImportado[] = []
+  let atual: ContratoImportado | null = null
+  let coletandoObjeto = false
 
-  let contratoAtual: any = null
+  for (const linhaBruta of linhas) {
+    const linha = linhaBruta.trim()
 
-  for (let i = 0; i < linhas.length; i++) {
-    const linha = linhas[i].trim()
+    if (ehLinhaLixo(linha)) continue
 
-    // 🎯 Detecta número do contrato (ex: 001-2025)
-    const matchNumero = linha.match(/^\d{3}-\d{4}/)
+    const numero = extrairNumero(linha)
 
-    if (matchNumero) {
-      // salva anterior
-      if (contratoAtual) {
-        contratos.push(contratoAtual)
+    if (numero) {
+      if (atual) {
+        atual.objeto = atual.objeto.trim()
+        contratos.push(atual)
       }
 
-      contratoAtual = {
-        numero: matchNumero[0],
+      atual = {
+        numero,
         objeto: '',
-        valor: 0,
+        valor: extrairValor(linha),
       }
 
+      coletandoObjeto = false
       continue
     }
 
-    // 🎯 Detecta valor (R$ ...)
-    if (linha.includes('R$') && contratoAtual) {
-      const matchValor = linha.match(/R\$\s?[\d.,]+/)
+    if (!atual) continue
 
-      if (matchValor) {
-        contratoAtual.valor = matchValor[0]
+    const valorNaLinha = extrairValor(linha)
+    if (valorNaLinha && !atual.valor) {
+      atual.valor = valorNaLinha
+    }
+
+    if (/OBJETO:/i.test(linha)) {
+      atual.objeto = linha.replace(/.*OBJETO:\s*/i, '').trim()
+      coletandoObjeto = true
+      continue
+    }
+
+    if (coletandoObjeto) {
+      if (extrairNumero(linha)) {
+        coletandoObjeto = false
+      } else {
+        atual.objeto = `${atual.objeto} ${linha}`.replace(/\s+/g, ' ').trim()
       }
     }
-
-    // 🎯 Detecta objeto (linhas grandes de texto)
-    if (
-      contratoAtual &&
-      linha.length > 50 &&
-      !linha.includes('ESTADO DA BAHIA') &&
-      !linha.includes('PREFEITURA') &&
-      !linha.includes('Contrato') &&
-      !linha.includes('Processo')
-    ) {
-      contratoAtual.objeto += ' ' + linha
-    }
   }
 
-  // último contrato
-  if (contratoAtual) {
-    contratos.push(contratoAtual)
+  if (atual) {
+    atual.objeto = atual.objeto.trim()
+    contratos.push(atual)
   }
 
-  return contratos
+  return contratos.filter((c) => c.numero)
 }
