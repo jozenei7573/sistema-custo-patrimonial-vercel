@@ -29,16 +29,16 @@ textarea {
 
 .page-shell {
   width: 100%;
-  max-width: 1240px;
+  max-width: 1280px;
   margin: 0 auto;
-  padding: 32px 20px 48px;
+  padding: 32px 20px 56px;
 }
 
 .hero {
   background: linear-gradient(135deg, #0b1733 0%, #132752 100%);
   color: #ffffff;
   border-radius: 22px;
-  padding: 28px 28px 24px;
+  padding: 30px 28px 26px;
   margin-bottom: 24px;
   box-shadow: 0 14px 35px rgba(15, 23, 42, 0.18);
 }
@@ -177,6 +177,34 @@ textarea {
   color: #1d4ed8;
 }
 
+.filters-grid {
+  display: grid;
+  grid-template-columns: 2fr 1fr 1fr;
+  gap: 16px;
+  margin-bottom: 22px;
+}
+
+.filter-group {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.filter-label {
+  font-size: 14px;
+  font-weight: 700;
+  color: #334155;
+}
+
+.filter-input {
+  min-height: 46px;
+  border-radius: 12px;
+  border: 1px solid #cbd5e1;
+  background: #ffffff;
+  padding: 0 14px;
+  color: #0f172a;
+}
+
 .cards-grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -216,6 +244,18 @@ textarea {
   background: #d97706;
 }
 
+.metric-card--purple::before {
+  background: #7c3aed;
+}
+
+.metric-card--slate::before {
+  background: #475569;
+}
+
+.metric-card--red::before {
+  background: #dc2626;
+}
+
 .metric-card__label {
   display: block;
   font-size: 15px;
@@ -226,9 +266,69 @@ textarea {
 
 .metric-card__value {
   display: block;
-  font-size: 36px;
+  font-size: 32px;
   line-height: 1.1;
   color: #0f172a;
+}
+
+.dashboard-grid {
+  display: grid;
+  grid-template-columns: 1.2fr 0.8fr;
+  gap: 22px;
+  margin-bottom: 22px;
+}
+
+.top-list {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  margin-top: 16px;
+}
+
+.top-list__item {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+  border: 1px solid #e5edf7;
+  border-radius: 14px;
+  padding: 14px;
+  background: #f8fbff;
+}
+
+.top-list__title {
+  font-weight: 800;
+  color: #102240;
+  margin-bottom: 4px;
+}
+
+.top-list__subtitle {
+  color: #475569;
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.top-list__value {
+  white-space: nowrap;
+  font-size: 16px;
+  color: #0f172a;
+}
+
+.summary-list {
+  margin-top: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.summary-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
 }
 
 .table-header {
@@ -249,7 +349,7 @@ textarea {
   width: 100%;
   border-collapse: collapse;
   background: #ffffff;
-  min-width: 900px;
+  min-width: 1100px;
 }
 
 .contracts-table thead th {
@@ -292,6 +392,41 @@ textarea {
   white-space: nowrap;
 }
 
+.badge {
+  display: inline-flex;
+  align-items: center;
+  min-height: 28px;
+  padding: 0 10px;
+  border-radius: 999px;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.badge--type-contrato {
+  background: #dbeafe;
+  color: #1d4ed8;
+}
+
+.badge--type-ata {
+  background: #ede9fe;
+  color: #7c3aed;
+}
+
+.badge--risk-alto {
+  background: #fee2e2;
+  color: #b91c1c;
+}
+
+.badge--risk-medio {
+  background: #fef3c7;
+  color: #b45309;
+}
+
+.badge--risk-baixo {
+  background: #dcfce7;
+  color: #15803d;
+}
+
 .empty-state {
   padding: 28px 18px;
   border-radius: 16px;
@@ -302,9 +437,23 @@ textarea {
   text-align: center;
 }
 
+@media (max-width: 1100px) {
+  .dashboard-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .cards-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
 @media (max-width: 960px) {
   .hero__title {
     font-size: 34px;
+  }
+
+  .filters-grid {
+    grid-template-columns: 1fr;
   }
 
   .cards-grid {
@@ -316,7 +465,7 @@ textarea {
   }
 
   .metric-card__value {
-    font-size: 30px;
+    font-size: 28px;
   }
 }
 

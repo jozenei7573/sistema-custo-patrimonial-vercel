@@ -2,13 +2,15 @@
 
 import { ChangeEvent, useEffect, useMemo, useState } from 'react'
 import { supabase } from '../lib/supabaseClient'
-import { processarContratos } from '../lib/importador'
+import { processarContratos, type ContratoImportado } from '../lib/importador'
 
 type Contrato = {
   id?: number
   numero: string
   objeto: string
   valor: number | string
+  tipo?: string
+  risco?: string
 }
 
 type StatusMensagem = {
@@ -36,12 +38,35 @@ function formatarMoeda(valor: number) {
   })
 }
 
+function classificarRisco(valor: number) {
+  if (valor >= 1000000) return 'alto'
+  if (valor >= 100000) return 'medio'
+  return 'baixo'
+}
+
+function detectarTipo(objeto: string) {
+  const texto = (objeto || '').toUpperCase()
+  if (texto.includes('ATA DE REGISTRO DE PREÇO') || texto.includes('ATA REGISTRO DE PREÇO') || texto.includes('ATA ')) {
+    return 'ATA'
+  }
+  return 'CONTRATO'
+}
+
+function rotuloRisco(risco?: string) {
+  if (risco === 'alto') return 'Alto'
+  if (risco === 'medio') return 'Médio'
+  return 'Baixo'
+}
+
 export default function Home() {
   const [contratos, setContratos] = useState<Contrato[]>([])
   const [loading, setLoading] = useState(true)
   const [importando, setImportando] = useState(false)
   const [status, setStatus] = useState<StatusMensagem>(null)
   const [arquivoSelecionado, setArquivoSelecionado] = useState('')
+  const [busca, setBusca] = useState('')
+  const [filtroRisco, setFiltroRisco] = useState('todos')
+  const [filtroTipo, setFiltroTipo] = useState('todos')
 
   async function carregarDados() {
     setLoading(true)
@@ -127,11 +152,19 @@ export default function Home() {
           return
         }
 
-        const payload = contratosProcessados.map((c) => ({
-          numero: c.numero,
-          objeto: c.objeto,
-          valor: normalizarValor(c.valor),
-        }))
+        const payload = contratosProcessados.map((c: ContratoImportado) => {
+          const valor = normalizarValor(c.valor)
+          const tipo = detectarTipo(c.objeto)
+          const risco = classificarRisco(valor)
+
+          return {
+            numero: c.numero,
+            objeto: c.objeto,
+            valor,
+            tipo,
+            risco,
+          }
+        })
 
         const { error } = await supabase
           .from('contratos')
@@ -176,15 +209,47 @@ export default function Home() {
     reader.readAsArrayBuffer(file)
   }
 
+  const contratosFiltrados = useMemo(() => {
+    return contratos.filter((contrato) => {
+      const texto = `${contrato.numero} ${contrato.objeto}`.toLowerCase()
+      const buscaOk = texto.includes(busca.toLowerCase())
+
+      const riscoOk =
+        filtroRisco === 'todos' ? true : (contrato.risco || '').toLowerCase() === filtroRisco
+
+      const tipoOk =
+        filtroTipo === 'todos' ? true : (contrato.tipo || '').toUpperCase() === filtroTipo
+
+      return buscaOk && riscoOk && tipoOk
+    })
+  }, [contratos, busca, filtroRisco, filtroTipo])
+
   const total = useMemo(
-    () => contratos.reduce((acc, c) => acc + Number(c.valor || 0), 0),
-    [contratos]
+    () => contratosFiltrados.reduce((acc, c) => acc + Number(c.valor || 0), 0),
+    [contratosFiltrados]
   )
 
   const ticketMedio = useMemo(() => {
-    if (!contratos.length) return 0
-    return total / contratos.length
-  }, [contratos, total])
+    if (!contratosFiltrados.length) return 0
+    return total / contratosFiltrados.length
+  }, [contratosFiltrados, total])
+
+  const totalContratos = useMemo(
+    () => contratosFiltrados.filter((c) => (c.tipo || 'CONTRATO') === 'CONTRATO').length,
+    [contratosFiltrados]
+  )
+
+  const totalAtas = useMemo(
+    () => contratosFiltrados.filter((c) => (c.tipo || '') === 'ATA').length,
+    [contratosFiltrados]
+  )
+
+  const totalRiscoAlto = useMemo(
+    () => contratosFiltrados.filter((c) => c.risco === 'alto').length,
+    [contratosFiltrados]
+  )
+
+  const maioresContratos = useMemo(() => contratosFiltrados.slice(0, 5), [contratosFiltrados])
 
   return (
     <main className="page-shell">
@@ -217,10 +282,42 @@ export default function Home() {
         {status && <div className={`status-banner status-banner--${status.tipo}`}>{status.texto}</div>}
       </section>
 
+      <section className="filters-grid">
+        <div className="filter-group">
+          <label className="filter-label">Buscar</label>
+          <input
+            className="filter-input"
+            type="text"
+            placeholder="Pesquisar por número ou objeto"
+            value={busca}
+            onChange={(e) => setBusca(e.target.value)}
+          />
+        </div>
+
+        <div className="filter-group">
+          <label className="filter-label">Risco</label>
+          <select className="filter-input" value={filtroRisco} onChange={(e) => setFiltroRisco(e.target.value)}>
+            <option value="todos">Todos</option>
+            <option value="alto">Alto</option>
+            <option value="medio">Médio</option>
+            <option value="baixo">Baixo</option>
+          </select>
+        </div>
+
+        <div className="filter-group">
+          <label className="filter-label">Tipo</label>
+          <select className="filter-input" value={filtroTipo} onChange={(e) => setFiltroTipo(e.target.value)}>
+            <option value="todos">Todos</option>
+            <option value="CONTRATO">Contrato</option>
+            <option value="ATA">ATA</option>
+          </select>
+        </div>
+      </section>
+
       <section className="cards-grid">
         <article className="metric-card metric-card--blue">
-          <span className="metric-card__label">Total de contratos</span>
-          <strong className="metric-card__value">{contratos.length}</strong>
+          <span className="metric-card__label">Total de registros</span>
+          <strong className="metric-card__value">{contratosFiltrados.length}</strong>
         </article>
 
         <article className="metric-card metric-card--green">
@@ -231,6 +328,72 @@ export default function Home() {
         <article className="metric-card metric-card--gold">
           <span className="metric-card__label">Ticket médio</span>
           <strong className="metric-card__value">{formatarMoeda(ticketMedio)}</strong>
+        </article>
+
+        <article className="metric-card metric-card--purple">
+          <span className="metric-card__label">Contratos</span>
+          <strong className="metric-card__value">{totalContratos}</strong>
+        </article>
+
+        <article className="metric-card metric-card--slate">
+          <span className="metric-card__label">ATAs</span>
+          <strong className="metric-card__value">{totalAtas}</strong>
+        </article>
+
+        <article className="metric-card metric-card--red">
+          <span className="metric-card__label">Risco alto</span>
+          <strong className="metric-card__value">{totalRiscoAlto}</strong>
+        </article>
+      </section>
+
+      <section className="dashboard-grid">
+        <article className="panel">
+          <h2 className="panel__title">Maiores valores</h2>
+          <p className="panel__text">Top 5 instrumentos com maior valor financeiro.</p>
+
+          <div className="top-list">
+            {maioresContratos.length === 0 ? (
+              <div className="empty-state">Nenhum registro encontrado.</div>
+            ) : (
+              maioresContratos.map((contrato, index) => (
+                <div className="top-list__item" key={contrato.id ?? `${contrato.numero}-${index}`}>
+                  <div>
+                    <div className="top-list__title">{contrato.numero}</div>
+                    <div className="top-list__subtitle">{String(contrato.objeto).slice(0, 90)}...</div>
+                  </div>
+                  <strong className="top-list__value">{formatarMoeda(Number(contrato.valor || 0))}</strong>
+                </div>
+              ))
+            )}
+          </div>
+        </article>
+
+        <article className="panel">
+          <h2 className="panel__title">Resumo analítico</h2>
+          <p className="panel__text">Indicadores rápidos para apoio à tomada de decisão.</p>
+
+          <div className="summary-list">
+            <div className="summary-row">
+              <span>Registros filtrados</span>
+              <strong>{contratosFiltrados.length}</strong>
+            </div>
+            <div className="summary-row">
+              <span>Contratos</span>
+              <strong>{totalContratos}</strong>
+            </div>
+            <div className="summary-row">
+              <span>ATAs</span>
+              <strong>{totalAtas}</strong>
+            </div>
+            <div className="summary-row">
+              <span>Risco alto</span>
+              <strong>{totalRiscoAlto}</strong>
+            </div>
+            <div className="summary-row">
+              <span>Maior valor</span>
+              <strong>{maioresContratos[0] ? formatarMoeda(Number(maioresContratos[0].valor || 0)) : 'R$ 0,00'}</strong>
+            </div>
+          </div>
         </article>
       </section>
 
@@ -244,25 +407,37 @@ export default function Home() {
 
         {loading ? (
           <div className="empty-state">Carregando contratos...</div>
-        ) : contratos.length === 0 ? (
-          <div className="empty-state">Nenhum contrato encontrado. Faça a importação do CSV para iniciar.</div>
+        ) : contratosFiltrados.length === 0 ? (
+          <div className="empty-state">Nenhum contrato encontrado com os filtros aplicados.</div>
         ) : (
           <div className="table-wrapper">
             <table className="contracts-table">
               <thead>
                 <tr>
                   <th>Número</th>
+                  <th>Tipo</th>
+                  <th>Risco</th>
                   <th>Objeto</th>
                   <th>Valor</th>
                 </tr>
               </thead>
               <tbody>
-                {contratos.map((contrato, index) => (
+                {contratosFiltrados.map((contrato, index) => (
                   <tr key={contrato.id ?? `${contrato.numero}-${index}`}>
                     <td className="contracts-table__number">{contrato.numero}</td>
+                    <td>
+                      <span className={`badge badge--type-${(contrato.tipo || 'CONTRATO').toLowerCase()}`}>
+                        {contrato.tipo || 'CONTRATO'}
+                      </span>
+                    </td>
+                    <td>
+                      <span className={`badge badge--risk-${(contrato.risco || 'baixo').toLowerCase()}`}>
+                        {rotuloRisco(contrato.risco)}
+                      </span>
+                    </td>
                     <td className="contracts-table__object">
-                      {String(contrato.objeto || '').slice(0, 180)}
-                      {String(contrato.objeto || '').length > 180 ? '...' : ''}
+                      {String(contrato.objeto || '').slice(0, 220)}
+                      {String(contrato.objeto || '').length > 220 ? '...' : ''}
                     </td>
                     <td className="contracts-table__value">{formatarMoeda(Number(contrato.valor || 0))}</td>
                   </tr>
