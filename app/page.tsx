@@ -23,6 +23,7 @@ type RegistroFolhaBanco = {
   cargo: string
   secretaria: string
   unidade: string
+  lotacao?: string
   valor: number | string
 }
 
@@ -259,7 +260,11 @@ export default function Home() {
       const data = await file.arrayBuffer()
       const workbook = XLSX.read(data, { type: 'array' })
       const primeiraAba = workbook.Sheets[workbook.SheetNames[0]]
-      const json = XLSX.utils.sheet_to_json(primeiraAba)
+
+      const json = XLSX.utils.sheet_to_json(primeiraAba, {
+        range: 6,
+        defval: '',
+      })
 
       const registros = processarFolha(json)
 
@@ -382,8 +387,6 @@ export default function Home() {
       reg.total = reg.contratos + reg.folha
     }
 
-    // contratos ainda não têm secretaria confiável na base atual
-    // então ficam em "NÃO CLASSIFICADO" até criarmos o vínculo institucional
     for (const item of contratosFiltrados) {
       const secretaria = 'NÃO CLASSIFICADO'
       if (!mapa.has(secretaria)) {
