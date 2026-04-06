@@ -7,69 +7,42 @@ export type RegistroFolha = {
   valor: number
 }
 
-function limparTexto(texto: string) {
-  return texto
-    ?.replace(/\s+/g, ' ')
-    .replace(/[^a-zA-ZÀ-ÿ0-9\s\-]/g, '')
-    .trim()
-}
-
-function extrairValor(valor: any): number {
+function limparValor(valor: any): number {
   if (!valor) return 0
 
   if (typeof valor === 'number') return valor
 
-  return parseFloat(
-    valor
-      .toString()
-      .replace(/\./g, '')
-      .replace(',', '.')
-      .replace(/[^\d.]/g, '')
-  ) || 0
-}
+  const texto = String(valor)
+    .replace(/\./g, '')
+    .replace(',', '.')
+    .replace(/[^\d.-]/g, '')
 
-function extrairSecretaria(custo: string): string {
-  if (!custo) return 'ADMINISTRATIVO'
-
-  const texto = custo.toUpperCase()
-
-  if (texto.includes('SEDUC')) return 'SEDUC'
-  if (texto.includes('SESAU')) return 'SESAU'
-  if (texto.includes('SEDES')) return 'SEDES'
-  if (texto.includes('SEFAZ')) return 'SEFAZ'
-  if (texto.includes('SEOP')) return 'SEOP'
-
-  return 'ADMINISTRATIVO'
-}
-
-function extrairUnidade(custo: string): string {
-  return limparTexto(custo) || 'NÃO IDENTIFICADO'
+  return Number(texto) || 0
 }
 
 export function processarFolha(dados: any[]): RegistroFolha[] {
   const mapa = new Map<string, RegistroFolha>()
 
   for (const linha of dados) {
-    const matricula = linha['Matrícula'] || linha['Matricula']
-    const nome = linha['Nome']
-    const cargo = linha['Cargo / Função'] || linha['Cargo']
-    const custo = linha['C. Custo']
-    const provento = linha['Provento']
+    const matricula = String(linha['Matrícula'] || '').trim()
+    const nome = String(linha['Nome'] || '').trim()
+    const cargo = String(linha['Cargo / Função'] || '').trim()
+    const unidade = String(linha['C. Custo'] || '').trim()
+    const valor = limparValor(linha['Provento'])
 
-    if (!matricula || !nome || !provento) continue
+    // ignora linhas inválidas
+    if (!matricula || !nome || valor === 0) continue
 
     const chave = `${matricula}-${nome}`
 
-    const valor = extrairValor(provento)
-
     if (!mapa.has(chave)) {
       mapa.set(chave, {
-        matricula: matricula.toString(),
-        nome: limparTexto(nome),
-        cargo: limparTexto(cargo),
-        secretaria: extrairSecretaria(custo),
-        unidade: extrairUnidade(custo),
-        valor: 0
+        matricula,
+        nome,
+        cargo,
+        secretaria: unidade,
+        unidade,
+        valor: 0,
       })
     }
 
