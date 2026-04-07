@@ -7,6 +7,12 @@ export type RegistroFolha = {
   valor: number
 }
 
+function limparTexto(texto: any) {
+  return String(texto || '')
+    .replace(/\s+/g, ' ')
+    .trim()
+}
+
 function limparValor(valor: any): number {
   if (!valor) return 0
 
@@ -20,28 +26,50 @@ function limparValor(valor: any): number {
   return Number(texto) || 0
 }
 
+function detectarSecretariaPorUnidade(unidade: string): string {
+  const texto = unidade.toUpperCase()
+
+  if (texto.includes('SEDUC') || texto.includes('ESCOLA') || texto.includes('CRECHE')) return 'SEDUC'
+  if (texto.includes('SESAU') || texto.includes('SAUDE') || texto.includes('UBS') || texto.includes('VIGILANCIA SANITARIA')) return 'SESAU'
+  if (texto.includes('SEDES') || texto.includes('CRAS') || texto.includes('CREAS') || texto.includes('ASSIST')) return 'SEDES'
+  if (texto.includes('SEFAZ')) return 'SEFAZ'
+  if (texto.includes('SEOP')) return 'SEOP'
+  if (texto.includes('SEMAN')) return 'SEMAN'
+  if (texto.includes('SEGOV')) return 'SEGOV'
+  if (texto.includes('SECOM')) return 'SECOM'
+  if (texto.includes('SEAI')) return 'SEAI'
+  if (texto.includes('SEPLAC')) return 'SEPLAC'
+  if (texto.includes('SEMORP') || texto.includes('GUARDA CIVIL')) return 'SEMORP'
+  if (texto.includes('SECET')) return 'SECET'
+  if (texto.includes('SDEE')) return 'SDEE'
+  if (texto.includes('SDRA')) return 'SDRA'
+  if (texto.includes('SEAG')) return 'SEAG'
+
+  return 'ADMINISTRATIVO'
+}
+
 export function processarFolha(dados: any[]): RegistroFolha[] {
   const mapa = new Map<string, RegistroFolha>()
 
   for (const linha of dados) {
-    const matricula = String(linha['Matrícula'] || '').trim()
-    const nome = String(linha['Nome'] || '').trim()
-    const cargo = String(linha['Cargo / Função'] || '').trim()
-    const unidade = String(linha['C. Custo'] || '').trim()
+    const matricula = limparTexto(linha['Matrícula'] || linha['Matricula'])
+    const nome = limparTexto(linha['Nome'])
+    const cargo = limparTexto(linha['Cargo / Função'] || linha['Cargo'] || linha['Cargo/Função'])
+    const unidade = limparTexto(linha['C. Custo'] || linha['C.Custo'] || linha['Centro de Custo'])
     const valor = limparValor(linha['Provento'])
 
-    // ignora linhas inválidas
-    if (!matricula || !nome || valor === 0) continue
+    if (!matricula || !nome || valor <= 0) continue
 
     const chave = `${matricula}-${nome}`
+    const secretaria = detectarSecretariaPorUnidade(unidade)
 
     if (!mapa.has(chave)) {
       mapa.set(chave, {
         matricula,
         nome,
         cargo,
-        secretaria: unidade,
-        unidade,
+        secretaria,
+        unidade: unidade || 'NÃO IDENTIFICADO',
         valor: 0,
       })
     }

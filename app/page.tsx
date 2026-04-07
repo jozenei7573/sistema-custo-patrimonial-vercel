@@ -25,6 +25,8 @@ type RegistroFolhaBanco = {
   unidade: string
   lotacao?: string
   valor: number | string
+  tipo_arquivo?: string
+  chave_unica?: string
 }
 
 type StatusMensagem = {
@@ -79,7 +81,6 @@ function rotuloRisco(risco?: string) {
 function normalizarCompetencia(texto: string) {
   const t = (texto || '').trim()
   if (!t) return '2026-01'
-
   if (/^\d{4}-\d{2}$/.test(t)) return t
 
   const partes = t.split(/[\/\-]/)
@@ -89,6 +90,12 @@ function normalizarCompetencia(texto: string) {
   }
 
   return t
+}
+
+function detectarTipoArquivo(nomeArquivo: string) {
+  const nome = (nomeArquivo || '').toUpperCase()
+  if (nome.includes('ESTAGI')) return 'ESTAGIARIOS'
+  return 'SERVIDORES'
 }
 
 export default function Home() {
@@ -101,6 +108,7 @@ export default function Home() {
   const [arquivoContratos, setArquivoContratos] = useState('')
   const [arquivoFolha, setArquivoFolha] = useState('')
   const [competenciaFolha, setCompetenciaFolha] = useState('2026-01')
+  const [competenciaConsulta, setCompetenciaConsulta] = useState('todos')
   const [busca, setBusca] = useState('')
   const [filtroRisco, setFiltroRisco] = useState('todos')
   const [filtroTipo, setFiltroTipo] = useState('todos')
@@ -153,18 +161,22 @@ export default function Home() {
     await carregarDados()
   }
 
-  async function limparFolha() {
-    const confirmado = window.confirm('Deseja apagar todos os registros da folha?')
+  async function limparFolhaDaCompetencia() {
+    const competencia = normalizarCompetencia(competenciaFolha)
+    const confirmado = window.confirm(`Deseja apagar os registros da folha da competência ${competencia}?`)
     if (!confirmado) return
 
-    const { error } = await supabase.from('folha_pagamento').delete().neq('id', 0)
+    const { error } = await supabase
+      .from('folha_pagamento')
+      .delete()
+      .eq('competencia', competencia)
 
     if (error) {
       setStatus({ tipo: 'erro', texto: `Erro ao limpar folha: ${error.message}` })
       return
     }
 
-    setStatus({ tipo: 'sucesso', texto: 'Base da folha limpa com sucesso.' })
+    setStatus({ tipo: 'sucesso', texto: `Folha da competência ${competencia} removida com sucesso.` })
     await carregarDados()
   }
 
@@ -222,6 +234,15 @@ export default function Home() {
           return
         }
 
+        await supabase.from('importacoes_log').insert({
+          modulo: 'CONTRATOS',
+          competencia: null,
+          tipo_arquivo: 'CSV',
+          arquivo_origem: file.name,
+          total_registros: payload.length,
+          observacao: 'Importação de contratos concluída com sucesso.',
+        })
+
         setStatus({
           tipo: 'sucesso',
           texto: `Importação de contratos concluída. ${payload.length} registros processados.`,
@@ -278,18 +299,31 @@ export default function Home() {
       }
 
       const competencia = normalizarCompetencia(competenciaFolha)
+      const tipoArquivo = detectarTipoArquivo(file.name)
 
-      const payload = registros.map((r) => ({
-        competencia,
-        servidor: r.nome,
-        matricula: r.matricula,
-        cargo: r.cargo,
-        secretaria: r.secretaria,
-        unidade: r.unidade,
-        lotacao: r.unidade,
-        valor: r.valor,
-        arquivo_origem: file.name,
-      }))
+      const payload = registros.map((r) => {
+        const chaveUnica = `${competencia}-${r.matricula}-${r.nome}-${tipoArquivo}`
+
+        return {
+          competencia,
+          servidor: r.nome,
+          matricula: r.matricula,
+          cargo: r.cargo,
+          secretaria: r.secretaria,
+          unidade: r.unidade,
+          lotacao: r.unidade,
+          valor: r.valor,
+          arquivo_origem: file.name,
+          tipo_arquivo: tipoArquivo,
+          chave_unica: chaveUnica,
+        }
+      })
+
+      await supabase
+        .from('folha_pagamento')
+        .delete()
+        .eq('competencia', competencia)
+        .eq('tipo_arquivo', tipoArquivo)
 
       const { error } = await supabase.from('folha_pagamento').insert(payload)
 
@@ -302,9 +336,18 @@ export default function Home() {
         return
       }
 
+      await supabase.from('importacoes_log').insert({
+        modulo: 'FOLHA',
+        competencia,
+        tipo_arquivo: tipoArquivo,
+        arquivo_origem: file.name,
+        total_registros: payload.length,
+        observacao: 'Importação de folha concluída com sucesso.',
+      })
+
       setStatus({
         tipo: 'sucesso',
-        texto: `Importação da folha concluída. ${payload.length} servidores consolidados.`,
+        texto: `Importação da folha concluída. ${payload.length} registros consolidados em ${competencia} (${tipoArquivo}).`,
       })
 
       await carregarDados()
@@ -339,20 +382,30 @@ export default function Home() {
     })
   }, [contratos, busca, filtroRisco, filtroTipo])
 
+  const folhaFiltrada = useMemo(() => {
+    if (competenciaConsulta === 'todos') return folha
+    return folha.filter((item) => item.competencia === competenciaConsulta)
+  }, [folha, competenciaConsulta])
+
+  const competenciasDisponiveis = useMemo(() => {
+    const unicas = Array.from(new Set(folha.map((f) => f.competencia).filter(Boolean)))
+    return unicas.sort()
+  }, [folha])
+
   const totalContratos = useMemo(
     () => contratosFiltrados.reduce((acc, c) => acc + Number(c.valor || 0), 0),
     [contratosFiltrados]
   )
 
   const totalFolha = useMemo(
-    () => folha.reduce((acc, f) => acc + Number(f.valor || 0), 0),
-    [folha]
+    () => folhaFiltrada.reduce((acc, f) => acc + Number(f.valor || 0), 0),
+    [folhaFiltrada]
   )
 
   const totalGeral = totalContratos + totalFolha
 
   const totalRegistrosContrato = contratosFiltrados.length
-  const totalRegistrosFolha = folha.length
+  const totalRegistrosFolha = folhaFiltrada.length
 
   const totalAtas = useMemo(
     () => contratosFiltrados.filter((c) => (c.tipo || '') === 'ATA').length,
@@ -377,7 +430,7 @@ export default function Home() {
       }
     >()
 
-    for (const item of folha) {
+    for (const item of folhaFiltrada) {
       const secretaria = item.secretaria || 'ADMINISTRATIVO'
       if (!mapa.has(secretaria)) {
         mapa.set(secretaria, { secretaria, contratos: 0, folha: 0, total: 0 })
@@ -398,16 +451,14 @@ export default function Home() {
     }
 
     return Array.from(mapa.values()).sort((a, b) => b.total - a.total)
-  }, [folha, contratosFiltrados])
+  }, [folhaFiltrada, contratosFiltrados])
 
   return (
     <main className="page-shell">
       <section className="hero">
         <div className="hero__eyebrow">Prefeitura Municipal de Alagoinhas – BA</div>
         <h1 className="hero__title">Sistema de Informação de Custos</h1>
-        <p className="hero__subtitle">
-          Base patrimonial • Visão gerencial • NBC TSP
-        </p>
+        <p className="hero__subtitle">Base patrimonial • Visão gerencial • NBC TSP</p>
       </section>
 
       <section className="panel panel--highlight">
@@ -441,7 +492,7 @@ export default function Home() {
       <section className="panel panel--highlight">
         <h2 className="panel__title">Importar folha de pagamento</h2>
         <p className="panel__text">
-          Selecione o arquivo Excel da folha. O sistema consolida matrículas repetidas e soma os proventos.
+          Selecione o arquivo Excel da folha. O sistema consolida matrículas repetidas, soma os proventos e grava por competência.
         </p>
 
         <div className="filters-grid">
@@ -473,8 +524,8 @@ export default function Home() {
             {arquivoFolha || 'Nenhum arquivo selecionado'}
           </div>
 
-          <button className="danger-button" onClick={limparFolha}>
-            Limpar folha
+          <button className="danger-button" onClick={limparFolhaDaCompetencia}>
+            Limpar competência
           </button>
         </div>
 
@@ -521,6 +572,24 @@ export default function Home() {
             <option value="todos">Todos</option>
             <option value="CONTRATO">Contrato</option>
             <option value="ATA">ATA</option>
+          </select>
+        </div>
+      </section>
+
+      <section className="filters-grid">
+        <div className="filter-group">
+          <label className="filter-label">Competência em análise</label>
+          <select
+            className="filter-input"
+            value={competenciaConsulta}
+            onChange={(e) => setCompetenciaConsulta(e.target.value)}
+          >
+            <option value="todos">Todas</option>
+            {competenciasDisponiveis.map((comp) => (
+              <option key={comp} value={comp}>
+                {comp}
+              </option>
+            ))}
           </select>
         </div>
       </section>
@@ -594,7 +663,7 @@ export default function Home() {
             {resumoPorSecretaria.length === 0 ? (
               <div className="empty-state">Nenhum dado consolidado.</div>
             ) : (
-              resumoPorSecretaria.slice(0, 8).map((item) => (
+              resumoPorSecretaria.slice(0, 10).map((item) => (
                 <div className="summary-row" key={item.secretaria}>
                   <span>{item.secretaria}</span>
                   <strong>{formatarMoeda(item.total)}</strong>
@@ -672,13 +741,15 @@ export default function Home() {
 
         {loading ? (
           <div className="empty-state">Carregando folha...</div>
-        ) : folha.length === 0 ? (
-          <div className="empty-state">Nenhum registro de folha importado.</div>
+        ) : folhaFiltrada.length === 0 ? (
+          <div className="empty-state">Nenhum registro de folha importado para a competência selecionada.</div>
         ) : (
           <div className="table-wrapper">
             <table className="contracts-table">
               <thead>
                 <tr>
+                  <th>Competência</th>
+                  <th>Tipo arquivo</th>
                   <th>Matrícula</th>
                   <th>Servidor</th>
                   <th>Secretaria</th>
@@ -687,8 +758,10 @@ export default function Home() {
                 </tr>
               </thead>
               <tbody>
-                {folha.slice(0, 200).map((item, index) => (
+                {folhaFiltrada.slice(0, 250).map((item, index) => (
                   <tr key={item.id ?? `${item.matricula}-${index}`}>
+                    <td>{item.competencia}</td>
+                    <td>{item.tipo_arquivo || 'SERVIDORES'}</td>
                     <td className="contracts-table__number">{item.matricula}</td>
                     <td>{item.servidor}</td>
                     <td>{item.secretaria}</td>
@@ -705,9 +778,9 @@ export default function Home() {
             </table>
           </div>
         )}
-        {folha.length > 200 && (
+        {folhaFiltrada.length > 250 && (
           <p className="panel__text" style={{ marginTop: 12 }}>
-            Exibindo os primeiros 200 registros da folha nesta tela.
+            Exibindo os primeiros 250 registros da folha nesta tela.
           </p>
         )}
       </section>
