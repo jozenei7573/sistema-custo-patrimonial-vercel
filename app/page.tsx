@@ -29,6 +29,14 @@ type RegistroFolhaBanco = {
   chave_unica?: string
 }
 
+type MapaSecretaria = {
+  id?: number
+  nome_origem: string
+  secretaria_padrao: string
+  tipo_unidade?: string
+  ativo?: boolean
+}
+
 type StatusMensagem = {
   tipo: 'sucesso' | 'erro' | 'info'
   texto: string
@@ -98,9 +106,19 @@ function detectarTipoArquivo(nomeArquivo: string) {
   return 'SERVIDORES'
 }
 
+function normalizarTextoMapa(texto: string) {
+  return (texto || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .toUpperCase()
+}
+
 export default function Home() {
   const [contratos, setContratos] = useState<Contrato[]>([])
   const [folha, setFolha] = useState<RegistroFolhaBanco[]>([])
+  const [mapaSecretarias, setMapaSecretarias] = useState<MapaSecretaria[]>([])
   const [loading, setLoading] = useState(true)
   const [importandoContratos, setImportandoContratos] = useState(false)
   const [importandoFolha, setImportandoFolha] = useState(false)
@@ -116,9 +134,14 @@ export default function Home() {
   async function carregarDados() {
     setLoading(true)
 
-    const [resContratos, resFolha] = await Promise.all([
+    const [resContratos, resFolha, resMapa] = await Promise.all([
       supabase.from('contratos').select('*').order('valor', { ascending: false }),
       supabase.from('folha_pagamento').select('*').order('valor', { ascending: false }),
+      supabase
+        .from('mapa_unidades_secretarias')
+        .select('*')
+        .eq('ativo', true)
+        .order('nome_origem', { ascending: true }),
     ])
 
     if (resContratos.error) {
@@ -137,6 +160,15 @@ export default function Home() {
       })
     } else {
       setFolha(resFolha.data || [])
+    }
+
+    if (resMapa.error) {
+      setStatus({
+        tipo: 'erro',
+        texto: `Erro ao carregar mapa institucional: ${resMapa.error.message}`,
+      })
+    } else {
+      setMapaSecretarias(resMapa.data || [])
     }
 
     setLoading(false)
@@ -392,20 +424,47 @@ export default function Home() {
     return unicas.sort()
   }, [folha])
 
+  const mapaNormalizado = useMemo(() => {
+    const mapa = new Map<string, MapaSecretaria>()
+
+    for (const item of mapaSecretarias) {
+      const chave = normalizarTextoMapa(item.nome_origem)
+      mapa.set(chave, item)
+    }
+
+    return mapa
+  }, [mapaSecretarias])
+
+  const folhaComSecretariaMapeada = useMemo(() => {
+    return folhaFiltrada.map((item) => {
+      const chaveUnidade = normalizarTextoMapa(item.unidade || '')
+      const chaveLotacao = normalizarTextoMapa(item.lotacao || '')
+      const encontrado =
+        mapaNormalizado.get(chaveUnidade) ||
+        mapaNormalizado.get(chaveLotacao)
+
+      return {
+        ...item,
+        secretaria_final: encontrado?.secretaria_padrao || item.secretaria || 'NAO CLASSIFICADO',
+        tipo_unidade_final: encontrado?.tipo_unidade || '',
+      }
+    })
+  }, [folhaFiltrada, mapaNormalizado])
+
   const totalContratos = useMemo(
     () => contratosFiltrados.reduce((acc, c) => acc + Number(c.valor || 0), 0),
     [contratosFiltrados]
   )
 
   const totalFolha = useMemo(
-    () => folhaFiltrada.reduce((acc, f) => acc + Number(f.valor || 0), 0),
-    [folhaFiltrada]
+    () => folhaComSecretariaMapeada.reduce((acc, f) => acc + Number(f.valor || 0), 0),
+    [folhaComSecretariaMapeada]
   )
 
   const totalGeral = totalContratos + totalFolha
 
   const totalRegistrosContrato = contratosFiltrados.length
-  const totalRegistrosFolha = folhaFiltrada.length
+  const totalRegistrosFolha = folhaComSecretariaMapeada.length
 
   const totalAtas = useMemo(
     () => contratosFiltrados.filter((c) => (c.tipo || '') === 'ATA').length,
@@ -430,8 +489,8 @@ export default function Home() {
       }
     >()
 
-    for (const item of folhaFiltrada) {
-      const secretaria = item.secretaria || 'ADMINISTRATIVO'
+    for (const item of folhaComSecretariaMapeada) {
+      const secretaria = item.secretaria_final || 'NAO CLASSIFICADO'
       if (!mapa.has(secretaria)) {
         mapa.set(secretaria, { secretaria, contratos: 0, folha: 0, total: 0 })
       }
@@ -441,7 +500,7 @@ export default function Home() {
     }
 
     for (const item of contratosFiltrados) {
-      const secretaria = 'NÃO CLASSIFICADO'
+      const secretaria = 'NAO CLASSIFICADO'
       if (!mapa.has(secretaria)) {
         mapa.set(secretaria, { secretaria, contratos: 0, folha: 0, total: 0 })
       }
@@ -451,7 +510,7 @@ export default function Home() {
     }
 
     return Array.from(mapa.values()).sort((a, b) => b.total - a.total)
-  }, [folhaFiltrada, contratosFiltrados])
+  }, [folhaComSecretariaMapeada, contratosFiltrados])
 
   return (
     <main className="page-shell">
@@ -663,7 +722,7 @@ export default function Home() {
             {resumoPorSecretaria.length === 0 ? (
               <div className="empty-state">Nenhum dado consolidado.</div>
             ) : (
-              resumoPorSecretaria.slice(0, 10).map((item) => (
+              resumoPorSecretaria.slice(0, 12).map((item) => (
                 <div className="summary-row" key={item.secretaria}>
                   <span>{item.secretaria}</span>
                   <strong>{formatarMoeda(item.total)}</strong>
@@ -734,14 +793,14 @@ export default function Home() {
           <div>
             <h2 className="panel__title">Folha consolidada</h2>
             <p className="panel__text">
-              Registros consolidados por matrícula e servidor, com soma dos proventos.
+              Registros consolidados por matrícula e servidor, com soma dos proventos e secretaria padronizada.
             </p>
           </div>
         </div>
 
         {loading ? (
           <div className="empty-state">Carregando folha...</div>
-        ) : folhaFiltrada.length === 0 ? (
+        ) : folhaComSecretariaMapeada.length === 0 ? (
           <div className="empty-state">Nenhum registro de folha importado para a competência selecionada.</div>
         ) : (
           <div className="table-wrapper">
@@ -758,13 +817,13 @@ export default function Home() {
                 </tr>
               </thead>
               <tbody>
-                {folhaFiltrada.slice(0, 250).map((item, index) => (
+                {folhaComSecretariaMapeada.slice(0, 250).map((item, index) => (
                   <tr key={item.id ?? `${item.matricula}-${index}`}>
                     <td>{item.competencia}</td>
                     <td>{item.tipo_arquivo || 'SERVIDORES'}</td>
                     <td className="contracts-table__number">{item.matricula}</td>
                     <td>{item.servidor}</td>
-                    <td>{item.secretaria}</td>
+                    <td>{item.secretaria_final}</td>
                     <td className="contracts-table__object">
                       {String(item.unidade || '').slice(0, 120)}
                       {String(item.unidade || '').length > 120 ? '...' : ''}
@@ -778,7 +837,7 @@ export default function Home() {
             </table>
           </div>
         )}
-        {folhaFiltrada.length > 250 && (
+        {folhaComSecretariaMapeada.length > 250 && (
           <p className="panel__text" style={{ marginTop: 12 }}>
             Exibindo os primeiros 250 registros da folha nesta tela.
           </p>
