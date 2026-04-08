@@ -13,6 +13,13 @@ type Contrato = {
   valor: number | string
   tipo?: string
   risco?: string
+  secretaria?: string
+}
+
+type ContratoClassificacao = {
+  numero: string
+  secretaria: string
+  unidade?: string | null
 }
 
 type RegistroFolhaBanco = {
@@ -119,6 +126,7 @@ export default function Home() {
   const [contratos, setContratos] = useState<Contrato[]>([])
   const [folha, setFolha] = useState<RegistroFolhaBanco[]>([])
   const [mapaSecretarias, setMapaSecretarias] = useState<MapaSecretaria[]>([])
+  const [classificacaoContratos, setClassificacaoContratos] = useState<ContratoClassificacao[]>([])
   const [loading, setLoading] = useState(true)
   const [importandoContratos, setImportandoContratos] = useState(false)
   const [importandoFolha, setImportandoFolha] = useState(false)
@@ -134,7 +142,7 @@ export default function Home() {
   async function carregarDados() {
     setLoading(true)
 
-    const [resContratos, resFolha, resMapa] = await Promise.all([
+    const [resContratos, resFolha, resMapa, resClassificacao] = await Promise.all([
       supabase.from('contratos').select('*').order('valor', { ascending: false }),
       supabase.from('folha_pagamento').select('*').order('valor', { ascending: false }),
       supabase
@@ -142,6 +150,7 @@ export default function Home() {
         .select('*')
         .eq('ativo', true)
         .order('nome_origem', { ascending: true }),
+      supabase.from('contratos_classificacao').select('*'),
     ])
 
     if (resContratos.error) {
@@ -169,6 +178,15 @@ export default function Home() {
       })
     } else {
       setMapaSecretarias(resMapa.data || [])
+    }
+
+    if (resClassificacao.error) {
+      setStatus({
+        tipo: 'erro',
+        texto: `Erro ao carregar classificação manual dos contratos: ${resClassificacao.error.message}`,
+      })
+    } else {
+      setClassificacaoContratos(resClassificacao.data || [])
     }
 
     setLoading(false)
@@ -250,6 +268,7 @@ export default function Home() {
             valor,
             tipo,
             risco,
+            secretaria: c.secretaria_automatica,
           }
         })
 
@@ -341,7 +360,7 @@ export default function Home() {
           servidor: r.nome,
           matricula: r.matricula,
           cargo: r.cargo,
-          secretaria: r.secretaria,
+          secretaria: r.secretaria_detectada,
           unidade: r.unidade,
           lotacao: r.unidade,
           valor: r.valor,
@@ -435,6 +454,16 @@ export default function Home() {
     return mapa
   }, [mapaSecretarias])
 
+  const classificacaoContratosMap = useMemo(() => {
+    const mapa = new Map<string, ContratoClassificacao>()
+
+    for (const item of classificacaoContratos) {
+      mapa.set(item.numero, item)
+    }
+
+    return mapa
+  }, [classificacaoContratos])
+
   const folhaComSecretariaMapeada = useMemo(() => {
     return folhaFiltrada.map((item) => {
       const chaveUnidade = normalizarTextoMapa(item.unidade || '')
@@ -446,14 +475,24 @@ export default function Home() {
       return {
         ...item,
         secretaria_final: encontrado?.secretaria_padrao || item.secretaria || 'NAO CLASSIFICADO',
-        tipo_unidade_final: encontrado?.tipo_unidade || '',
       }
     })
   }, [folhaFiltrada, mapaNormalizado])
 
+  const contratosComSecretariaFinal = useMemo(() => {
+    return contratosFiltrados.map((item) => {
+      const manual = classificacaoContratosMap.get(item.numero)
+
+      return {
+        ...item,
+        secretaria_final: manual?.secretaria || item.secretaria || 'NAO CLASSIFICADO',
+      }
+    })
+  }, [contratosFiltrados, classificacaoContratosMap])
+
   const totalContratos = useMemo(
-    () => contratosFiltrados.reduce((acc, c) => acc + Number(c.valor || 0), 0),
-    [contratosFiltrados]
+    () => contratosComSecretariaFinal.reduce((acc, c) => acc + Number(c.valor || 0), 0),
+    [contratosComSecretariaFinal]
   )
 
   const totalFolha = useMemo(
@@ -463,20 +502,20 @@ export default function Home() {
 
   const totalGeral = totalContratos + totalFolha
 
-  const totalRegistrosContrato = contratosFiltrados.length
+  const totalRegistrosContrato = contratosComSecretariaFinal.length
   const totalRegistrosFolha = folhaComSecretariaMapeada.length
 
   const totalAtas = useMemo(
-    () => contratosFiltrados.filter((c) => (c.tipo || '') === 'ATA').length,
-    [contratosFiltrados]
+    () => contratosComSecretariaFinal.filter((c) => (c.tipo || '') === 'ATA').length,
+    [contratosComSecretariaFinal]
   )
 
   const totalRiscoAlto = useMemo(
-    () => contratosFiltrados.filter((c) => c.risco === 'alto').length,
-    [contratosFiltrados]
+    () => contratosComSecretariaFinal.filter((c) => c.risco === 'alto').length,
+    [contratosComSecretariaFinal]
   )
 
-  const maioresContratos = useMemo(() => contratosFiltrados.slice(0, 5), [contratosFiltrados])
+  const maioresContratos = useMemo(() => contratosComSecretariaFinal.slice(0, 5), [contratosComSecretariaFinal])
 
   const resumoPorSecretaria = useMemo(() => {
     const mapa = new Map<
@@ -499,8 +538,8 @@ export default function Home() {
       reg.total = reg.contratos + reg.folha
     }
 
-    for (const item of contratosFiltrados) {
-      const secretaria = 'NAO CLASSIFICADO'
+    for (const item of contratosComSecretariaFinal) {
+      const secretaria = item.secretaria_final || 'NAO CLASSIFICADO'
       if (!mapa.has(secretaria)) {
         mapa.set(secretaria, { secretaria, contratos: 0, folha: 0, total: 0 })
       }
@@ -510,7 +549,7 @@ export default function Home() {
     }
 
     return Array.from(mapa.values()).sort((a, b) => b.total - a.total)
-  }, [folhaComSecretariaMapeada, contratosFiltrados])
+  }, [folhaComSecretariaMapeada, contratosComSecretariaFinal])
 
   return (
     <main className="page-shell">
@@ -722,7 +761,7 @@ export default function Home() {
             {resumoPorSecretaria.length === 0 ? (
               <div className="empty-state">Nenhum dado consolidado.</div>
             ) : (
-              resumoPorSecretaria.slice(0, 12).map((item) => (
+              resumoPorSecretaria.slice(0, 15).map((item) => (
                 <div className="summary-row" key={item.secretaria}>
                   <span>{item.secretaria}</span>
                   <strong>{formatarMoeda(item.total)}</strong>
@@ -745,7 +784,7 @@ export default function Home() {
 
         {loading ? (
           <div className="empty-state">Carregando contratos...</div>
-        ) : contratosFiltrados.length === 0 ? (
+        ) : contratosComSecretariaFinal.length === 0 ? (
           <div className="empty-state">Nenhum contrato encontrado com os filtros aplicados.</div>
         ) : (
           <div className="table-wrapper">
@@ -755,12 +794,13 @@ export default function Home() {
                   <th>Número</th>
                   <th>Tipo</th>
                   <th>Risco</th>
+                  <th>Secretaria</th>
                   <th>Objeto</th>
                   <th>Valor</th>
                 </tr>
               </thead>
               <tbody>
-                {contratosFiltrados.map((contrato, index) => (
+                {contratosComSecretariaFinal.map((contrato, index) => (
                   <tr key={contrato.id ?? `${contrato.numero}-${index}`}>
                     <td className="contracts-table__number">{contrato.numero}</td>
                     <td>
@@ -773,9 +813,10 @@ export default function Home() {
                         {rotuloRisco(contrato.risco)}
                       </span>
                     </td>
+                    <td>{contrato.secretaria_final}</td>
                     <td className="contracts-table__object">
-                      {String(contrato.objeto || '').slice(0, 220)}
-                      {String(contrato.objeto || '').length > 220 ? '...' : ''}
+                      {String(contrato.objeto || '').slice(0, 200)}
+                      {String(contrato.objeto || '').length > 200 ? '...' : ''}
                     </td>
                     <td className="contracts-table__value">
                       {formatarMoeda(Number(contrato.valor || 0))}

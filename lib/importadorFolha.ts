@@ -2,7 +2,7 @@ export type RegistroFolha = {
   matricula: string
   nome: string
   cargo: string
-  secretaria: string
+  secretaria_detectada: string
   unidade: string
   valor: number
 }
@@ -14,7 +14,7 @@ function limparTexto(texto: any) {
 }
 
 function limparValor(valor: any): number {
-  if (!valor) return 0
+  if (valor === null || valor === undefined || valor === '') return 0
 
   if (typeof valor === 'number') return valor
 
@@ -27,12 +27,12 @@ function limparValor(valor: any): number {
 }
 
 function detectarSecretariaPorUnidade(unidade: string): string {
-  const texto = unidade.toUpperCase()
+  const texto = (unidade || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase()
 
-  if (texto.includes('SEDUC') || texto.includes('ESCOLA') || texto.includes('CRECHE')) return 'SEDUC'
-  if (texto.includes('SESAU') || texto.includes('SAUDE') || texto.includes('UBS') || texto.includes('VIGILANCIA SANITARIA')) return 'SESAU'
+  if (texto.includes('SEDUC') || texto.includes('ESCOLA') || texto.includes('CRECHE') || texto.includes('FUNDEF')) return 'SEDUC'
+  if (texto.includes('SESAU') || texto.includes('SAUDE') || texto.includes('UBS') || texto.includes('VIGILANCIA SANITARIA') || texto.includes('HOSPITAL')) return 'SESAU'
   if (texto.includes('SEDES') || texto.includes('CRAS') || texto.includes('CREAS') || texto.includes('ASSIST')) return 'SEDES'
-  if (texto.includes('SEFAZ')) return 'SEFAZ'
+  if (texto.includes('SEFAZ') || texto.includes('RENDAS IMOBILIARIAS')) return 'SEFAZ'
   if (texto.includes('SEOP')) return 'SEOP'
   if (texto.includes('SEMAN')) return 'SEMAN'
   if (texto.includes('SEGOV')) return 'SEGOV'
@@ -61,15 +61,15 @@ export function processarFolha(dados: any[]): RegistroFolha[] {
     if (!matricula || !nome || valor <= 0) continue
 
     const chave = `${matricula}-${nome}`
-    const secretaria = detectarSecretariaPorUnidade(unidade)
+    const secretariaDetectada = detectarSecretariaPorUnidade(unidade)
 
     if (!mapa.has(chave)) {
       mapa.set(chave, {
         matricula,
         nome,
         cargo,
-        secretaria,
-        unidade: unidade || 'NÃO IDENTIFICADO',
+        secretaria_detectada: secretariaDetectada,
+        unidade: unidade || 'NAO IDENTIFICADO',
         valor: 0,
       })
     }
